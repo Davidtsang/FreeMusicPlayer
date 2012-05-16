@@ -1,0 +1,445 @@
+//
+//  PeopleViewController.m
+//  WebMusicDownload
+//
+//  Created by Zen David on 11-10-25.
+//  Copyright 2011年 __MyCompanyName__. All rights reserved.
+//
+
+#import "PeopleViewController.h"
+#import "NSData-AES.h"
+#import "Base64.h"
+#import "MyFunction.h"
+
+@interface PeopleViewController()
+//-(void)loadUserSettings;
+-(void)alertUserCannotUse;
+-(void)saveAllowUpload;
+-(NSString *)makeAuthString:(NSString *)urlString;
+
+@end
+
+@implementation PeopleViewController
+@synthesize webView = mWebView;
+@synthesize toolbar = mToolbar;
+@synthesize back = mBack;
+@synthesize forward = mForward;
+@synthesize refresh = mRefresh;
+//@synthesize bDownloads;
+@synthesize pageTitle = mPageTitle;
+@synthesize addressField = mAddressField;
+ 
+@synthesize needDownFiles;
+@synthesize sheetSelectTempURL;
+//@synthesize findSongsView;
+@synthesize  networkActivityIndicatorBusy;
+
+-(void)saveAllowUpload{
+    NSUserDefaults *def =[NSUserDefaults standardUserDefaults];
+    [def setBool:YES forKey:kUploadMusicInfoSetting];
+    [def synchronize];
+    [appDelegate loadUserSettings];
+}
+
+-(void)alertUserCannotUse
+{
+    NSString *msg =@"If you want to use this feature, you must allow upload your music information(audio tags and link) when you got a song or audio at website. (If you want to close the upload function, please check the \"Settings\" at the main screen)";
+    UIAlertView* alertView = [[UIAlertView alloc]
+                              initWithTitle:@"Notice"
+                              message:msg  delegate:self
+                              cancelButtonTitle:@"No"
+                              otherButtonTitles:@"Yes, allow",nil];
+    [alertView show];
+    [alertView release];
+}
+-(IBAction)gotoHome:(id)sender
+{
+    [self navToURL:kPeopleHomeURL];
+}
+- (void)updateButtons
+{
+    self.forward.enabled = self.webView.canGoForward;
+    self.back.enabled = self.webView.canGoBack;
+    //self.stop.enabled = self.webView.loading;
+}
+
+- (void)loadAddress:(id)sender event:(UIEvent *)event
+{
+    NSString* urlString = self.addressField.text;
+    NSURL* url = [NSURL URLWithString:urlString];
+    if(!url.scheme)
+    {
+        NSString* modifiedURLString = [NSString stringWithFormat:@"http://%@", urlString];
+        url = [NSURL URLWithString:modifiedURLString];
+    }
+    NSURLRequest* request = [NSURLRequest requestWithURL:url];
+    [self.webView loadRequest:request];
+}
+
+- (void)informError:(NSError *)error
+{
+    NSString* localizedDescription = [error localizedDescription];
+    if ([error code] == kCFURLErrorNotConnectedToInternet || [error code] == kCFURLErrorNetworkConnectionLost ) {
+
+        //notice user
+        UIAlertView* alertView = [[UIAlertView alloc]
+                                  initWithTitle:@"Error"
+                                  message:localizedDescription delegate:nil
+                                  cancelButtonTitle:@"OK"
+                                  otherButtonTitles:nil];
+        [alertView show];
+        [alertView release];
+    }
+
+}
+
+- (void)aReload:(id)sender
+{
+    [self.webView reload];
+}
+
+-(BOOL)testURL:(NSString *)urlStirng{
+    
+    //.mp3
+    NSString *lastAlpha = [[urlStirng substringFromIndex:[urlStirng length] - 4] lowercaseString];
+    
+    //NSLog(@"sub string is %@", ssub);
+    if ([lastAlpha isEqualToString:@".mp3"]  ) {
+        return YES;
+    }
+    
+    if ([lastAlpha isEqualToString:@".aac"]  ) {
+        return YES;
+    }
+    
+    //m4a
+    if ([lastAlpha isEqualToString:@".m4a"]  ) {
+        return YES;
+    }
+    //---BAIDU MP3:  .mp3?
+    BOOL foundString = ([urlStirng rangeOfString:@".mp3?" options:NSCaseInsensitiveSearch].location != NSNotFound);
+  	if (foundString) {
+        return YES;
+    }
+    
+	
+    return NO;
+}
+
+//-(NSArray *)findMusicFiles:(NSString *)docHtml
+//{
+//	NSMutableArray *resuleMusicFiles = [NSMutableArray array];
+//	
+//	// find mp3s
+//	NSError *error = NULL;
+//	//@"href=\"(http://\\S*?\\.mp3)\""
+//	//<a href="http://tuanwei.hebeu.edu.cn/ceo/upfile/multimedia/4.mp3" id="org-a" onmousedown="img(this.href, 0);">http://tuanwei.hebeu.edu.cn/...dia/4.mp3</a>
+//	NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"href=\"(http://\\S*?\\.mp3)\".+?>(.*?)</a>"
+//																		   options:NSRegularExpressionCaseInsensitive
+//																			 error:&error];
+//	NSArray *matches = [regex matchesInString:docHtml
+//									  options:0
+//										range:NSMakeRange(0, [docHtml length])];
+//	NSInteger matchesNum =[matches count];
+//	//NSLog(@"matche len is :%d",matchesNum);
+//	if (matchesNum > 0) {
+//		for (NSTextCheckingResult *match in matches) {
+//			//NSRange matchRange = [match range];
+//			
+//			NSAssert(match.numberOfRanges > 0 ,@"BAD MP3 URL!");
+//			NSRange subFileUrlRange =[match rangeAtIndex:1];
+//			NSRange urlNameRange =[match rangeAtIndex:2];
+//			
+//			NSArray *musicFileItem =[[NSArray alloc] initWithObjects:
+//									 [docHtml substringWithRange:urlNameRange], 
+//									 [docHtml substringWithRange:subFileUrlRange],
+//									 nil
+//									 ];
+//			
+//            if ([self testURLExistInItems:[docHtml substringWithRange:subFileUrlRange] withItems:resuleMusicFiles] == NO) {
+//                [resuleMusicFiles addObject:musicFileItem];
+//            }
+//            
+//			[musicFileItem release];
+//		}
+//		
+//	}//END IF
+//	return resuleMusicFiles;
+//	
+//}//end fun
+//-(BOOL)testURLExistInItems:(NSString *)URLName withItems:(NSMutableArray *)theItems
+//{
+//    NSEnumerator *elemantor =[theItems objectEnumerator];
+//    NSArray *_musicFileItem;
+//    BOOL itemExist =NO;
+//    while ((_musicFileItem =[elemantor nextObject])) {
+//        if ([[_musicFileItem objectAtIndex:1] isEqualToString:URLName]) {
+//            itemExist =YES;
+//        }
+//    }
+//    return itemExist;
+//}
+
+- (void)popDownloadSheet:(NSString *)urlString
+{
+    self.sheetSelectTempURL =urlString;
+    NSString *sheetTitle =[NSString stringWithFormat:@"Select action for the link: %@",urlString];
+    
+    UIActionSheet *actionSheet = [[UIActionSheet alloc] initWithTitle:sheetTitle delegate:self cancelButtonTitle:@"Cancel" destructiveButtonTitle:nil otherButtonTitles:@"Add to Player",@"Follow the Link",nil];
+    [actionSheet showInView:[UIApplication sharedApplication].keyWindow];
+    [actionSheet release];
+}
+
+-(void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if(buttonIndex == 0){
+        //NSLog(@"ok!add a url");
+        
+        [appDelegate addURLDownload:self.sheetSelectTempURL];
+        self.sheetSelectTempURL =nil;
+    }
+    if(buttonIndex == 1)
+    {
+        [self navToURL:self.sheetSelectTempURL];
+    }
+    //test
+    if (buttonIndex ==2) {
+        self.sheetSelectTempURL =nil;
+    }   
+}
+
+-(NSString *)makeAuthString:(NSString *)urlString
+{
+    //mac
+    NSString *mac = appDelegate.localIP;
+    NSString *salt = @"thanks to god!";
+    NSString *authString =[NSString stringWithFormat:@"%@---%@---%@",mac,salt,[MyFunction md5HexDigest:urlString]];
+    
+    NSString *aKey =@"e77e03ad23b9ff40287d1a57046b6723";
+    NSData *data = [authString dataUsingEncoding: NSASCIIStringEncoding];
+    NSData *encryptedData = [data AESEncryptWithPassphrase:aKey];
+    
+    // 2) Encode Base 64
+    // If you need to send over internet, encode NSData -> Base64 encoded string
+    [Base64 initialize];
+    NSString *theAuthString = [Base64 encode:encryptedData];
+    NSString *authCode =[NSString stringWithFormat:@"%@___%@",theAuthString,mac];
+    return authCode;
+}
+-(void)navToURL:(NSString *)urlString
+{
+    NSURL* _url = [NSURL URLWithString:urlString];
+    //NSURLRequest* request = [NSURLRequest requestWithURL:_url];
+    NSMutableURLRequest * request =[NSMutableURLRequest requestWithURL:_url];
+    
+    //AUTH CODE: MAC + SALT + URL MD5
+    [request setValue: [self makeAuthString:urlString] forHTTPHeaderField: @"Authorization"];
+    [self.webView loadRequest:request];
+    
+    //NSMutableURLRequest *urlRequest = [[NSMutableURLRequest alloc] initWithURL: [NSURL urlWithString: @"http://www.google.com/"];
+                                      
+}
+
+//- (IBAction)showFoundSongs:(id)sender{
+//    if (self.findSongsView ==nil) {
+//        FindSongsViewController *_findSongsView = [[FindSongsViewController alloc] initWithNibName:@"FindSongs" bundle:nil];
+//        self.findSongsView =_findSongsView;
+//        [_findSongsView release];
+//        //NSLog(@"new favoritesView");
+//        
+//    }
+//    self.findSongsView.needDownFiles =self.needDownFiles;
+//    
+//    [self.findSongsView.view setFrame:CGRectMake(0,480.0f, 320.0f, 460.0f)];
+//    [self.tabBarController.view addSubview:self.findSongsView.view];
+//    [findSongsView refreshData];
+//    [UIView beginAnimations:nil context:nil];
+//    [UIView setAnimationDuration:0.35];
+//    [self.findSongsView.view setFrame:CGRectMake(0,20.0f, 320.0f, 460.0f)];
+//    [UIView commitAnimations];
+//    
+//}
+#pragma mark -  Class base
+- (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
+{
+    self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
+    if (self) {
+        // Custom initialization
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    [mWebView release];
+    [mToolbar release];
+    [mBack release];
+    [mForward release];
+    [mRefresh release];
+    //[bDownloads release];
+    [mPageTitle release];
+    [mAddressField release];
+//    [favorites release];
+//    [favoritesView release];
+    [needDownFiles release];
+    [sheetSelectTempURL release];
+    //[findSongsView release];
+    
+    [super dealloc];
+}
+
+- (void)didReceiveMemoryWarning
+{
+    // Releases the view if it doesn't have a superview.
+    [super didReceiveMemoryWarning];
+    
+    // Release any cached data, images, etc that aren't in use.
+}
+
+#pragma mark - View lifecycle
+
+/*
+ // Implement loadView to create a view hierarchy programmatically, without using a nib.
+ - (void)loadView
+ {
+ }
+ */
+
+
+// Implement viewDidLoad to do additional setup after loading the view, typically from a nib.
+- (void)viewWillAppear:(BOOL)animated
+{
+    if (appDelegate.isAllowUpdateSongInfo == NO ) {
+        [self alertUserCannotUse];
+    }
+}
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    
+
+    
+    //self.bDownloads.enabled =NO;
+    [self.toolbar insertSubview:[[[UIImageView alloc] initWithImage:[UIImage imageNamed:@"NowPlayingNavBar.png"]] autorelease] atIndex:0];
+
+    self.webView.delegate = self;
+    self.webView.scalesPageToFit = YES;
+    NSURL* url = [NSURL URLWithString:kPeopleHomeURL];
+    NSURLRequest* request = [NSURLRequest requestWithURL:url];
+    [self.webView loadRequest:request];
+    [self updateButtons];
+
+    //初始化应用程序委托
+	appDelegate =(WebMusicDownloadAppDelegate *)[[UIApplication sharedApplication] delegate];
+    
+    
+}
+
+
+- (void)viewDidUnload
+{
+    self.webView = nil;
+    self.toolbar = nil;
+    self.back = nil;
+    self.forward = nil;
+    self.refresh = nil;
+    //self.bDownloads = nil;
+    self.pageTitle = nil;
+    self.addressField = nil;
+//    self.favorites =nil;
+//    self.favoritesView =nil;
+    self.needDownFiles = nil ;
+    self.sheetSelectTempURL =nil;
+    //self.findSongsView =nil;
+    
+    [super viewDidUnload];
+    // Release any retained subviews of the main view.
+    // e.g. self.myOutlet = nil;
+}
+
+- (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation
+{
+    // Return YES for supported orientations
+    return (interfaceOrientation == UIInterfaceOrientationPortrait);
+}
+
+
+// MARK: -
+// MARK: UIWebViewDelegate protocol
+- (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType
+{
+    NSURL* url = [request mainDocumentURL];
+    NSString* absoluteString = [url absoluteString];
+    
+    if([self testURL:absoluteString] ==YES && ([absoluteString isEqualToString:self.sheetSelectTempURL] ==NO))
+    {
+        //pop ask user
+        
+        [self popDownloadSheet:absoluteString];
+        //cancel nav
+        return NO;
+    } 
+    //[self updateAddress:request];
+    return YES;
+    
+}
+
+- (void)webViewDidStartLoad:(UIWebView *)webView
+{
+    if ([UIApplication sharedApplication].networkActivityIndicatorVisible == YES) {
+        self.networkActivityIndicatorBusy =YES;
+    }else{
+        [UIApplication sharedApplication].networkActivityIndicatorVisible = YES;
+        self.networkActivityIndicatorBusy =NO;
+    }
+    [self updateButtons];
+}
+
+- (void)webViewDidFinishLoad:(UIWebView *)webView
+{
+    if (self.networkActivityIndicatorBusy !=YES) {
+        [UIApplication sharedApplication].networkActivityIndicatorVisible = NO;
+    }
+    
+    [self updateButtons];
+    //[self updateTitle:webView];
+    //NSURLRequest* request = [webView request];
+    //[self updateAddress:request];
+    
+//    //find music url
+//    //get html conntent
+//	NSString *docHtml = [self.webView stringByEvaluatingJavaScriptFromString: 
+//						 @"document.body.innerHTML"];
+//	//NSLog(@"docHtml is :%@",docHtml);
+//	self.needDownFiles =	[self findMusicFiles:docHtml];
+//	
+//	//SHOW DOWN BUTTON
+//	if ([self.needDownFiles count] > 0) {
+//		self.bDownloads.enabled =YES;	
+//	}else {
+//		self.bDownloads.enabled =NO;
+//	}//end find music
+    
+}
+
+- (void)webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error
+{
+    [UIApplication sharedApplication].networkActivityIndicatorVisible = NO;
+    [self updateButtons];
+    [self informError:error];
+}
+
+#pragma mark - UIAlertView Delegate
+-(void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex
+{
+    //get save button
+    NSLog(@"buttonIndex:%d",buttonIndex) ;
+    
+    if (buttonIndex == 1) {
+        [self saveAllowUpload];
+        
+    }else{
+        [self.tabBarController setSelectedIndex:1];
+    }
+ }
+
+@end
